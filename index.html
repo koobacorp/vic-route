@@ -25,27 +25,27 @@ canvas{display:block;touch-action:none}
 <div id="over"><h1>Game Over</h1><div id="final"></div><button id="restart">Restart</button><small style="margin-top:8px;opacity:.7">Space / tap to restart</small></div>
 <script type="module">
 import * as THREE from 'three';
-const R=14, BASE=14.4, RAMP=0.5, RAMP_T=10, CAP=72, TURN_RATE=18/R /* ~74deg/s, 18 m/s surface (was 16) */, HOP_H=1.6, THRUST=36, VY_MAX=7.5, FUEL_TIME=1.6, FUEL_REFILL=0.7, MAX_ALT=9, JUMP_H=HOP_H, G=18,
+const R=14, BASE=14.4, RAMP=0.5, RAMP_T=10, CAP=200, TURN_RATE=18/R /* ~74deg/s, 18 m/s surface (was 16) */, HOP_H=1.6, THRUST=36, VY_MAX=7.5, FUEL_TIME=1.6, FUEL_REFILL=0.7, MAX_ALT=9, JUMP_H=HOP_H, G=18,
   V0=Math.sqrt(2*G*JUMP_H), COYOTE=0.12, BUFFER=0.1, CAM_D=10.5, CAM_H=8.5, CAM_FOLLOW=4.5;
 const renderer=new THREE.WebGLRenderer({antialias:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(innerWidth,innerHeight);
 document.body.appendChild(renderer.domElement);
 const scene=new THREE.Scene();scene.background=new THREE.Color(0x120c14);scene.fog=new THREE.Fog(0x120c14,40,150);
 {const dimSun=new THREE.Mesh(new THREE.SphereGeometry(14,24,16),new THREE.MeshBasicMaterial({color:0xb8502a,fog:false}));dimSun.position.set(-60,-150,-90);scene.add(dimSun);}
-const camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.1,400);
+const camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.1,2000);
 scene.add(new THREE.HemisphereLight(0xbfd8ff,0x202030,1.1));
 const sun=new THREE.DirectionalLight(0xffffff,1.2);sun.position.set(10,30,10);scene.add(sun);scene.add(camera);const camLight=new THREE.DirectionalLight(0xffffff,1.4);camLight.position.set(0,2,1);camera.add(camLight);camLight.target.position.set(0,0,-10);camera.add(camLight.target);
 // tube: vertical cylinder along Y, Vic runs downward (-Y). Texture scrolls to show motion.
 const cv=document.createElement('canvas');cv.width=256;cv.height=256;const cx=cv.getContext('2d');
 cx.fillStyle='#2a3350';cx.fillRect(0,0,256,256);cx.fillStyle='#3d4a75';cx.fillRect(0,0,256,24);
 cx.fillStyle='#4f5f95';for(let i=0;i<8;i++)cx.fillRect(i*32,0,3,256);
-const tex=new THREE.CanvasTexture(cv);tex.wrapS=tex.wrapT=THREE.RepeatWrapping;tex.repeat.set(14,60);
+const tex=new THREE.CanvasTexture(cv);tex.wrapS=tex.wrapT=THREE.RepeatWrapping;tex.repeat.set(14,300);
 const GAPN=4,gapU={value:Array.from({length:GAPN},()=>new THREE.Vector2(1e5,1e5))};
 const tubeMat=new THREE.MeshStandardMaterial({map:tex,roughness:.8,side:THREE.DoubleSide});
 tubeMat.onBeforeCompile=sh=>{sh.uniforms.gaps=gapU;
  sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nvarying float vWY;').replace('#include <project_vertex>','#include <project_vertex>\nvWY=(modelMatrix*vec4(transformed,1.0)).y;');
  sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nvarying float vWY;uniform vec2 gaps['+GAPN+'];').replace('void main() {','void main() {\nfor(int i=0;i<'+GAPN+';i++){if(vWY>gaps[i].x&&vWY<gaps[i].y)discard;}');};
-const tube=new THREE.Mesh(new THREE.CylinderGeometry(R,R,600,96,1,true),tubeMat);tube.position.y=-150;
+const tube=new THREE.Mesh(new THREE.CylinderGeometry(R,R,3000,96,1,true),tubeMat);tube.position.y=-1400;
 scene.add(tube);
 // Vic placeholder capsule (no reference model found) — FLAGGED
 const vic=new THREE.Group();
@@ -111,7 +111,7 @@ const OBS_HALF={t:1.5,r:0.45,a:0.3};
 const meteors=[],craters=[],gaps=[];let pad=null;let st,camTheta0=true;const obstacles=[];
 const best=()=>+(localStorage.getItem('vicRouteBest')||0);
 function reset(){for(const o of obstacles)scene.remove(o.mesh);obstacles.length=0;if(typeof clearMeteors==='function')clearMeteors();if(typeof clearGaps==='function')clearGaps();
- st={theta:0,y:0,vy:0,grounded:true,lastGround:0,bufferT:-1,speed:BASE,t:0,dist:0,spawnIn:1.5,over:false,frames:0,impacts:0,meteorIn:0,killedBy:null,spawnLo:1.8,spawnHi:3.2,difficulty:0,gapIn:8,gapsCrossed:0,boost:0,boosted:false,padAy:-50,padDone:false,te:0,spins:0,jumps:0,fuel:1,thrusting:false,jumpT:0,maxY:0,camTheta:0,lean:0};camTheta0=true;
+ st={theta:0,y:0,vy:0,grounded:true,lastGround:0,bufferT:-1,speed:BASE,t:0,dist:0,spawnIn:1.5,over:false,frames:0,impacts:0,meteorIn:0,killedBy:null,spawnLo:1.8,spawnHi:3.2,difficulty:0,gapIn:8,side:'out',prevS:R,zone:'tube',entered:0,exited:0,inDur:0,inT0:0,electricCrossed:0,gapsCrossed:0,boost:0,boosted:false,padAy:-50,padDone:false,te:0,spins:0,jumps:0,fuel:1,thrusting:false,jumpT:0,maxY:0,camTheta:0,lean:0};camTheta0=true;
  document.getElementById('over').style.display='none';if(pad){pad.visible=true;placePad();}}
 reset();
 const keys={left:false,right:false,jump:false};const touchHold={left:false,right:false,jump:false};const tapPend={left:0,right:0};
@@ -141,15 +141,15 @@ document.addEventListener('touchmove',e=>e.preventDefault(),{passive:false});
 document.addEventListener('gesturestart',e=>e.preventDefault());
 document.getElementById('restart').addEventListener('click',()=>reset());
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
-function spawn(th){const m=new THREE.Mesh(obsGeo,obsMat);const o={mesh:m,theta:th??Math.random()*Math.PI*2,ay:-90};
+function spawn(th){const m=new THREE.Mesh(obsGeo,obsMat);const o={mesh:m,theta:th??Math.random()*Math.PI*2,ay:SPAWN_AY()};
  scene.add(m);obstacles.push(o);placeObs(o);return o.theta;}
 function placeObs(o){const r=R+OBS_HALF.r;o.mesh.position.set(Math.sin(o.theta)*r,o.ay,Math.cos(o.theta)*r);o.mesh.rotation.set(0,o.theta,0);}
 function angDiff(a,b){let d=a-b;d=Math.atan2(Math.sin(d),Math.cos(d));return d;}
-function collide(o){if(!st.grounded)return false; // spec: collision only while not airborne
+function collide(o){if(!st.grounded||st.side!=='out')return false; // spec: collision only while not airborne
  const arc=Math.abs(angDiff(o.theta,st.theta))*R; const ax=Math.abs(o.ay-0);
  return arc<VIC_HALF.x+OBS_HALF.t && ax<VIC_HALF.z+OBS_HALF.a && st.y<OBS_HALF.r*2;}
 function gameOver(by){st.over=true;st.killedBy=by||'barrier';const m=Math.floor(st.dist);if(m>best())localStorage.setItem('vicRouteBest',m);
- document.getElementById('final').textContent=`${st.killedBy==='barrier'?'':st.killedBy==='gap'?'Fell into the gap! ':'Knocked out by a '+st.killedBy+'! '}${m} m — Best ${best()} m`;document.getElementById('over').style.display='flex';}
+ document.getElementById('final').textContent=`${st.killedBy==='barrier'?'':st.killedBy==='gap'?'Fell into the gap! ':st.killedBy==='electric'?'Electrocuted! ':'Knocked out by a '+st.killedBy+'! '}${m} m — Best ${best()} m`;document.getElementById('over').style.display='flex';}
 
 // ---------- Boost pad ----------
 const surf=(th,h,ay,v=new THREE.Vector3())=>v.set(Math.sin(th)*(R+h),ay,Math.cos(th)*(R+h));
@@ -167,30 +167,64 @@ function updatePad(dt){if(st.padDone)return;st.padAy+=st.speed*dt;placePad();pad
 placePad();
 
 // ---------- Tube gaps ----------
+// Two kinds. 'enter': open cut (hole) -> drop inside, run on inner wall ~5s, flared ramp lifts her back out over a short exit cut.
+// 'electric': covered cut with live energy field; touching it = death; must jump+jetpack over.
 // Max airtime with full fuel: hop 0.12s + thrust FUEL_TIME (vy capped VY_MAX, alt capped MAX_ALT) + free fall from MAX_ALT.
 const AIR_MAX=0.12+FUEL_TIME+Math.sqrt(2*MAX_ALT/G); // ~2.72s
 const HOP_AIR=2*V0/G;                                  // ~0.84s (tap only - not enough)
-const GAP_AIR=1.35;                                    // gap needs 1.35s airtime: > hop, ~50% of max
-const stripeTex=(()=>{const c=document.createElement('canvas');c.width=256;c.height=32;const x=c.getContext('2d');x.fillStyle='#111';x.fillRect(0,0,256,32);x.fillStyle='#ffcc00';
- for(let i=-2;i<20;i++){x.beginPath();x.moveTo(i*16,32);x.lineTo(i*16+8,32);x.lineTo(i*16+24,0);x.lineTo(i*16+16,0);x.fill();}const t=new THREE.CanvasTexture(c);t.wrapS=THREE.RepeatWrapping;t.repeat.set(10,1);return t;})();
-const stripeMat=new THREE.MeshBasicMaterial({map:stripeTex,side:THREE.DoubleSide,fog:false});
-const edgeMat=new THREE.MeshBasicMaterial({color:0xff4020,fog:false});
-function gapLen(sp){return sp*GAP_AIR;}
-function spawnGap(near){const L=gapLen(st.speed);if(near===undefined)near=-90-st.speed*2;
- const grp=new THREE.Group();
- const band=(y)=>{const m=new THREE.Mesh(new THREE.CylinderGeometry(R+0.03,R+0.03,3,96,1,true),stripeMat);m.position.y=y;grp.add(m);};
- const ring=(y)=>{const m=new THREE.Mesh(new THREE.TorusGeometry(R+0.05,0.18,8,96),edgeMat);m.rotation.x=Math.PI/2;m.position.y=y;grp.add(m);};
- /* no warning visuals: clean cut only (shader discard) */
- scene.add(grp);const g={near,L,grp};gaps.push(g);grp.position.y=near;return g;}
-function overGap(){for(const g of gaps)if(0<g.near&&0>g.near-g.L)return g;return null;}
+const GAP_AIR=1.35;                                    // electric gap needs 1.35s airtime: > hop, ~50% of max
+const INSIDE_T=5, FLARE_H=3, DEEP=4.5;
+const SPAWN_AY=()=>-Math.max(90,st.speed*1.5);
+const flareMat=new THREE.MeshStandardMaterial({map:tex,roughness:.8,side:THREE.DoubleSide});
+const coverMat=new THREE.MeshBasicMaterial({color:0x66ccff,transparent:true,opacity:.25,side:THREE.DoubleSide,blending:THREE.AdditiveBlending,depthWrite:false});
+const arcMat=new THREE.LineBasicMaterial({color:0xe8f6ff,transparent:true,opacity:.95,blending:THREE.AdditiveBlending,depthWrite:false});
+const ARCS=16,ARC_SEG=10;
+function spawnGap(near,kind){const sp=st.speed;if(near===undefined)near=SPAWN_AY()-sp*2;if(!kind)kind=Math.random()<0.5?'electric':'enter';
+ const grp=new THREE.Group();const g={kind,near,grp};
+ if(kind==='electric'){g.L=sp*GAP_AIR;
+  const cov=new THREE.Mesh(new THREE.CylinderGeometry(R+0.02,R+0.02,g.L,96,1,true),coverMat.clone());cov.position.y=-g.L/2;grp.add(cov);g.cover=cov;
+  const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.BufferAttribute(new Float32Array(ARCS*ARC_SEG*2*3),3));
+  const arcs=new THREE.LineSegments(geo,arcMat);arcs.frustumCulled=false;grp.add(arcs);g.arcs=arcs;g.arcT=0;
+  const lt=new THREE.PointLight(0x88ccff,40,30);lt.position.set(0,-4,R+2);grp.add(lt);g.light=lt;
+  // edge arcs ring along the rims make it read as a live field
+ } else {g.Lo=Math.max(5,sp*0.55);g.Li=sp*INSIDE_T;g.Lf=Math.max(8,sp*0.4);g.Le=Math.max(4,sp*0.3);g.L=g.Lo+g.Li+g.Lf+g.Le;
+  const fl=new THREE.Mesh(new THREE.CylinderGeometry(R,R+FLARE_H,g.Lf,96,1,true),flareMat);fl.position.y=-(g.Lo+g.Li+g.Lf/2);grp.add(fl);}
+ scene.add(grp);gaps.push(g);grp.position.y=near;if(g.arcs)zapArcs(g);return g;}
+function zapArcs(g){const a=g.arcs.geometry.attributes.position.array;let k=0;
+ for(let i=0;i<ARCS;i++){let th=Math.random()*Math.PI*2,y=-Math.random()*g.L;const len=4+Math.random()*12;
+  for(let j=0;j<ARC_SEG;j++){const th2=th+(Math.random()-.5)*0.25,y2=Math.max(-g.L,Math.min(0,y-len/ARC_SEG+(Math.random()-.5)*1.5)),h=0.1+Math.random()*0.5;
+   a[k++]=Math.sin(th)*(R+h);a[k++]=y;a[k++]=Math.cos(th)*(R+h);a[k++]=Math.sin(th2)*(R+h);a[k++]=y2;a[k++]=Math.cos(th2)*(R+h);th=th2;y=y2;}}
+ g.arcs.geometry.attributes.position.needsUpdate=true;}
+function zoneAt(){for(const g of gaps){const p=g.near;if(p<0||p>g.L)continue;
+ if(g.kind==='electric')return {zone:'electric',ground:true,S:R,g,p};
+ if(p<g.Lo)return {zone:'hole',ground:false,S:R,g,p};
+ if(p<g.Lo+g.Li)return {zone:'interior',ground:true,S:R,g,p};
+ if(p<g.Lo+g.Li+g.Lf)return {zone:'flare',ground:true,S:R+FLARE_H*(p-g.Lo-g.Li)/g.Lf,g,p};
+ return {zone:'exit',ground:false,S:R,g,p};}
+ return {zone:'tube',ground:true,S:R};}
+// vertical physics incl. gap surfaces; y = height above current surface on the side she runs (out: outward, in: toward axis)
+function vertPhys(dt){const z=zoneAt(),S=z.S,pS=st.prevS;let adj=true;
+ if(st.side==='out'&&st.y<0&&z.zone==='interior'){st.side='in';st.y=-st.y;st.vy=-st.vy;st.grounded=false;st.entered++;st.inT0=st.t;}
+ if(st.side==='in'&&z.zone!=='interior'&&z.zone!=='flare'){const r=pS-st.y;st.side='out';st.y=Math.max(0.5,r-R);st.vy=Math.max(-st.vy,0)+3;st.grounded=false;st.exited++;st.inDur=st.t-st.inT0;adj=false;}
+ if(adj&&S!==pS&&!(st.grounded&&z.ground))st.y+=st.side==='out'?pS-S:S-pS;
+ if(st.grounded&&!z.ground){st.grounded=false;if(pS>R+0.5)st.vy=Math.max(st.vy,3);}
+ if(!st.grounded){const y0=st.y;st.vy-=G*dt;st.y+=st.vy*dt;if(st.y>MAX_ALT){st.y=MAX_ALT;st.vy=Math.min(st.vy,0);}st.maxY=Math.max(st.maxY,st.y);
+  if(st.y<=0&&z.ground&&y0>=-0.01){st.y=0;st.vy=0;st.grounded=true;}}
+ st.prevS=S;st.zone=z.zone;st.S=S;
+ if(st.side==='out'){if(z.zone==='electric'&&st.y<=0.05){gameOver('electric');return;}
+  if(st.y<-DEEP||(st.y<0&&(z.zone==='tube'||z.zone==='flare'))){gameOver('gap');return;}}}
 function updateGaps(dt,move){
- // schedule: after 20s real time & pad passed; clean lead-in (no obstacles/meteors/craters) so fuel is full
+ // schedule: after 20s real time & pad passed; spawned 2s behind the obstacle spawn line -> clean lead-in, full fuel
  st.gapIn-=dt;
  if(st.t>20&&st.padDone&&st.gapIn<=0&&!gaps.length&&!meteors.length&&!craters.length){
-  const g=spawnGap(-90-st.speed*2); /* 2s clean lead-in behind the obstacle spawn line */st.spawnIn=Math.max(st.spawnIn,(g.L+st.speed*1.0)/st.speed+0.2);st.gapIn=Math.max(9,26-16*st.difficulty)+Math.random()*8;}
- for(let i=gaps.length-1;i>=0;i--){const g=gaps[i];g.near+=move;g.grp.position.y=g.near;if(g.near-g.L>25){scene.remove(g.grp);gaps.splice(i,1);st.gapsCrossed++;}}
- for(let i=0;i<GAPN;i++){const g=gaps[i];gapU.value[i].set(g?g.near-g.L:1e5,g?g.near:1e5);}
- if(st.grounded&&overGap()){gameOver('gap');}}
+  const g=spawnGap();st.gapIn=Math.max(9,26-16*st.difficulty)+Math.random()*8;}
+ for(let i=gaps.length-1;i>=0;i--){const g=gaps[i];g.near+=move;g.grp.position.y=g.near;
+  if(g.kind==='electric'){g.arcT-=dt;if(g.arcT<=0){zapArcs(g);g.arcT=0.05;}g.cover.material.opacity=0.18+0.14*Math.random();g.light.intensity=25+30*Math.random();}
+  if(g.near-g.L>25){scene.remove(g.grp);gaps.splice(i,1);st.gapsCrossed++;if(g.kind==='electric')st.electricCrossed++;}}
+ for(let i=0;i<GAPN;i++)gapU.value[i].set(1e5,1e5);let u=0;
+ for(const g of gaps){if(u>=GAPN-1)break;
+  if(g.kind==='electric')gapU.value[u++].set(g.near-g.L,g.near);
+  else{gapU.value[u++].set(g.near-g.Lo,g.near);gapU.value[u++].set(g.near-g.L,g.near-g.Lo-g.Li);}}}
 function clearGaps(){for(const g of gaps)scene.remove(g.grp);gaps.length=0;for(const v of gapU.value)v.set(1e5,1e5);}
 
 // ---------- Meteors ----------
@@ -245,7 +279,7 @@ const clock=new THREE.Clock();const camPos=new THREE.Vector3(0,CAM_D,R+CAM_H);co
 let simT=0;function step(dt){st.frames++;simT+=dt;
  if(!st.over){st.t+=dt;
   const L=keys.left||touchHold.left||tapPend.left,Rt=keys.right||touchHold.right||tapPend.right;tapPend.left=tapPend.right=0;
-  const dir=(L?1:0)-(Rt?1:0);/* +theta = screen-left */if(dir){st.theta+=dir*TURN_RATE*dt;st.spins++;}st.lean+=(dir-st.lean)*(1-Math.exp(-10*dt));
+  const dir=((L?1:0)-(Rt?1:0))*(st.side==='in'?-1:1);/* +theta = screen-left outside; camera is flipped inside */if(dir){st.theta+=dir*TURN_RATE*dt;st.spins++;}st.lean+=(dir-st.lean)*(1-Math.exp(-10*dt));
   updatePad(dt);const te=st.t+st.boost;st.te=te;
   st.speed=Math.min(CAP,BASE+0.144*te+0.00048*te*te);st.difficulty=Math.min(1,te/150);st.spawnLo=1.8-1.1*st.difficulty;st.spawnHi=3.2-2.0*st.difficulty;
   const move=st.speed*dt;st.dist+=move;tex.offset.y-=move/300*30;
@@ -255,34 +289,37 @@ let simT=0;function step(dt){st.frames++;simT+=dt;
   const held=keys.jump||touchHold.jump;
   st.thrusting=!st.grounded&&held&&st.fuel>0&&st.t-st.jumpT>0.12;
   if(st.thrusting){st.fuel=Math.max(0,st.fuel-dt/FUEL_TIME);st.vy=Math.min(VY_MAX,st.vy+THRUST*dt);}
-  if(!st.grounded){st.vy-=G*dt;st.y+=st.vy*dt;if(st.y>MAX_ALT){st.y=MAX_ALT;st.vy=Math.min(st.vy,0);}st.maxY=Math.max(st.maxY,st.y);if(st.y<=0){st.y=0;st.vy=0;st.grounded=true;}}
+  vertPhys(dt);if(st.over)return;
   if(st.grounded)st.fuel=Math.min(1,st.fuel+FUEL_REFILL*dt);
   document.getElementById('fuel').style.width=(st.fuel*100).toFixed(1)+'%';
-  st.spawnIn-=dt;if(st.spawnIn<=0&&gaps.some(g=>g.near-g.L<-90+st.speed*0.8))st.spawnIn=0.2;if(st.spawnIn<=0){const th=spawn();if(st.difficulty>0.35&&Math.random()<0.45*st.difficulty)spawn(th+(Math.PI/3+Math.random()*Math.PI*0.8)*(Math.random()<.5?-1:1));st.spawnIn=st.spawnLo+Math.random()*(st.spawnHi-st.spawnLo);}
+  st.spawnIn-=dt;if(st.spawnIn<=0&&gaps.some(g=>g.near-g.L<SPAWN_AY()+st.speed*0.8))st.spawnIn=0.2;if(st.spawnIn<=0){const th=spawn();if(st.difficulty>0.35&&Math.random()<0.45*st.difficulty)spawn(th+(Math.PI/3+Math.random()*Math.PI*0.8)*(Math.random()<.5?-1:1));st.spawnIn=st.spawnLo+Math.random()*(st.spawnHi-st.spawnLo);}
   updateMeteors(dt,move);if(st.over)return;updateGaps(dt,move);if(st.over)return;
   for(let i=obstacles.length-1;i>=0;i--){const o=obstacles[i];o.ay+=move;placeObs(o);
    if(o.ay>20){scene.remove(o.mesh);obstacles.splice(i,1);continue;}
    if(collide(o)){gameOver();break;}}
   const ph=st.grounded?Math.sin(st.t*(8+st.speed*0.25)):0;legL.rotation.x=ph*0.7;legR.rotation.x=-ph*0.7;armL.rotation.x=-1.2-ph*0.35;armR.rotation.x=-1.2+ph*0.35;if(!st.grounded){legL.rotation.x=-0.6;legR.rotation.x=0.3;}}
  // place vic: pivot rotates around Y by theta; vic sits at radius R + y, facing -world Y
- vicPivot.rotation.y=st.theta;vic.position.set(0,0,R+st.y);vic.rotation.set(Math.PI/2+vic.rotation.x*0,0,0);
- vic.rotation.x=Math.PI/2;vic.rotation.y=-st.lean*0.5;vic.rotation.z=0;vic.rotateZ(-st.lean*0.25); // local +Y -> outward(+Z pivot), local +Z -> down(-Y world)
+ const IN=st.side==='in',SS=st.S||R;vicPivot.rotation.y=st.theta;vic.position.set(0,0,IN?SS-st.y:SS+st.y);vic.rotation.set(Math.PI/2+vic.rotation.x*0,0,0);
+ vic.rotation.x=Math.PI/2;vic.rotation.y=-st.lean*0.5;vic.rotation.z=0;vic.rotateZ(-st.lean*0.25);if(IN)vic.rotateZ(Math.PI); // local +Y -> outward(+Z pivot), local +Z -> down(-Y world)
  if(camTheta0){st.camTheta=st.theta;camTheta0=false;}
  st.camTheta+=angDiff(st.theta,st.camTheta)*(1-Math.exp(-CAM_FOLLOW*dt));
  flame.visible=st.thrusting;if(st.thrusting){flame.scale.set(1,0.8+Math.random()*0.6,1);
   for(let n=0;n<2;n++){const p=parts[pIdx++%PN];const w=flame.getWorldPosition(new THREE.Vector3());p.m.position.copy(w);p.life=0.4;p.m.visible=true;p.m.material.color.set(0xff6fd0);
-   const nrm=new THREE.Vector3(Math.sin(st.theta),0,Math.cos(st.theta));p.v.copy(nrm).multiplyScalar(-4-Math.random()*2).add(new THREE.Vector3((Math.random()-.5)*1.5,6+Math.random()*3,(Math.random()-.5)*1.5));}}
+   const nrm=new THREE.Vector3(Math.sin(st.theta),0,Math.cos(st.theta)).multiplyScalar(IN?-1:1);p.v.copy(nrm).multiplyScalar(-4-Math.random()*2).add(new THREE.Vector3((Math.random()-.5)*1.5,6+Math.random()*3,(Math.random()-.5)*1.5));}}
  for(const p of parts){if(p.life>0){p.life-=dt;p.m.position.addScaledVector(p.v,dt);p.m.material.opacity=Math.max(0,p.life/0.4);p.m.scale.setScalar(1+(0.4-p.life)*4);if(p.life<=0)p.m.visible=false;}}
  const s=Math.sin(st.camTheta),c=Math.cos(st.camTheta);
- const target=new THREE.Vector3(s*(R+CAM_H+st.y*0.9),CAM_D,c*(R+CAM_H+st.y*0.9));
+ const cr=IN?Math.max(2,SS-5.5-st.y*0.9):SS+CAM_H+st.y*0.9,lr=IN?SS-1-st.y*0.85:SS+1+st.y*0.85;const target=new THREE.Vector3(s*cr,CAM_D,c*cr);
  const k=1-Math.exp(-8*dt);camPos.lerp(target,k);camera.position.copy(camPos);
- look.set(s*(R+1+st.y*0.85),-4,c*(R+1+st.y*0.85));camera.up.set(s,0,c);camera.lookAt(look);
+ look.set(s*lr,-4,c*lr);camera.up.set(IN?-s:s,0,IN?-c:c);camera.lookAt(look);
  if(CLOSEUP){const v=vic.getWorldPosition(new THREE.Vector3());const n=new THREE.Vector3(s,0,c);camera.position.copy(v).addScaledVector(n,1.6).add(new THREE.Vector3(0,-4.5,0));camera.up.copy(n);camera.lookAt(v.clone().addScaledVector(n,1.5));}
  document.getElementById('score').textContent=Math.floor(st.dist)+' m';
  document.getElementById('best').textContent='Best: '+Math.max(best(),Math.floor(st.dist))+' m';
 }
-renderer.setAnimationLoop(()=>{const dt=Math.min(clock.getDelta(),0.05);step(dt);renderer.render(scene,camera);});
-window.__game={get state(){return {...st,obstacles:obstacles.map(o=>({theta:o.theta,ay:o.ay})),meteors:meteors.map(m=>({kind:m.kind,theta:m.theta,ay:m.ay,t:m.t,lead:LEAD,ringVisible:m.ring.visible,rockScale:m.rock.scale.x,rockPos:m.rock.position.toArray()})),gaps:gaps.map(g=>({near:g.near,L:g.L})),craters:craters.map(c=>({theta:c.theta,ay:c.ay,life:c.life})),mode,vicPos:vic.getWorldPosition(new THREE.Vector3()).toArray()}},
+renderer.setAnimationLoop(()=>{const dt=Math.min(clock.getDelta(),0.05);
+ // substeps: never move more than ~0.8m per physics step (no tunneling at 200)
+ const n=Math.min(40,Math.max(1,Math.ceil(st.speed*dt/0.8)));for(let i=0;i<n;i++)step(dt/n);
+ scene.fog.far=Math.max(150,st.speed*1.8+20);scene.fog.near=scene.fog.far*0.27;renderer.render(scene,camera);});
+window.__game={get state(){return {...st,obstacles:obstacles.map(o=>({theta:o.theta,ay:o.ay})),meteors:meteors.map(m=>({kind:m.kind,theta:m.theta,ay:m.ay,t:m.t,lead:LEAD,ringVisible:m.ring.visible,rockScale:m.rock.scale.x,rockPos:m.rock.position.toArray()})),gaps:gaps.map(g=>({kind:g.kind,near:g.near,L:g.L,Lo:g.Lo,Li:g.Li,Lf:g.Lf,Le:g.Le})),craters:craters.map(c=>({theta:c.theta,ay:c.ay,life:c.life})),mode,vicPos:vic.getWorldPosition(new THREE.Vector3()).toArray()}},
  spawnAt(theta,ay){const m=new THREE.Mesh(obsGeo,obsMat);const o={mesh:m,theta,ay};scene.add(m);obstacles.push(o);placeObs(o);},
- get simT(){return simT},reset,jump:requestJump,spawnMeteor:(k,th,ay)=>spawnMeteor(k,th,ay),setTime:t=>{st.t=t;},consts:{R,BASE,CAP,V0,G,HOP_H,COYOTE,BUFFER,TURN_RATE,FUEL_TIME},placeholder:false,spawnGap:n=>{const g=spawnGap(n);return {near:g.near,L:g.L}},gapPhys:{AIR_MAX,HOP_AIR,GAP_AIR},clearAll(){for(const o of obstacles)scene.remove(o.mesh);obstacles.length=0;clearMeteors();st.spawnIn=99;st.meteorIn=99;st.gapIn=999;},skipPad(){st.padDone=true;pad.visible=false;},screenX(){const v=vic.getWorldPosition(new THREE.Vector3()).project(camera);return (v.x+1)/2*innerWidth;},project(a){const v=new THREE.Vector3(...a).project(camera);return [(v.x+1)/2*innerWidth,(1-v.y)/2*innerHeight,v.z];}};
+ get simT(){return simT},reset,jump:requestJump,spawnMeteor:(k,th,ay)=>spawnMeteor(k,th,ay),setTime:t=>{st.t=t;},consts:{R,BASE,CAP,V0,G,HOP_H,COYOTE,BUFFER,TURN_RATE,FUEL_TIME},placeholder:false,spawnGap:(n,k)=>{const g=spawnGap(n,k);return {kind:g.kind,near:g.near,L:g.L,Lo:g.Lo,Li:g.Li}},setGapIn:x=>{st.gapIn=x},setSpeedT:t=>{st.t=t},gapPhys:{AIR_MAX,HOP_AIR,GAP_AIR},clearAll(){for(const o of obstacles)scene.remove(o.mesh);obstacles.length=0;clearMeteors();st.spawnIn=99;st.meteorIn=99;st.gapIn=999;},skipPad(){st.padDone=true;pad.visible=false;},screenX(){const v=vic.getWorldPosition(new THREE.Vector3()).project(camera);return (v.x+1)/2*innerWidth;},project(a){const v=new THREE.Vector3(...a).project(camera);return [(v.x+1)/2*innerWidth,(1-v.y)/2*innerHeight,v.z];}};
 </script></body></html>
