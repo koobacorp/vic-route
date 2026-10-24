@@ -17,7 +17,7 @@ canvas{display:block;touch-action:none}
 #zl{left:0}#zr{right:0}
 #jb{position:absolute;left:50%;bottom:40px;transform:translateX(-50%);width:90px;height:90px;border-radius:50%;background:rgba(255,79,139,.45);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700}
 </style>
-<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
 </head><body>
 <div id="hud"><div id="score">0 m</div><small id="best">Best: 0 m</small><br><div id="fuelwrap"><div id="fuel"></div></div><small id="mode">keyboard</small></div>
 <div id="touch"><div class="zone" id="zl">◀</div><div class="zone" id="zr">▶</div><div id="jb">JUMP</div></div>
@@ -437,7 +437,27 @@ function updateExtras(dt,move){
   if(!st.strobeHold){st.strobePh-=dt;if(st.strobePh<=0){const d=!st.strobeDark;setStrobeDark(d);st.strobePh=d?0.07+Math.random()*0.28:0.03+Math.random()*0.08;st.strobeFlips++;}}}
  else if(st.realm==='normal'&&st.dist>2000){st.strobeIn-=dt;if(st.strobeIn<=0&&!portals.length&&!gaps.length&&st.portalIn>3&&st.gapIn>3)startStrobe();}}
 
-const clock=new THREE.Clock();const camPos=new THREE.Vector3(0,CAM_D,R+CAM_H);const look=new THREE.Vector3();
+// ---------- Rigged Vic model (falls back to primitive Vic if loading fails) ----------
+const vicModel={loaded:false,failed:false,clip:'idle',mixer:null,acts:{},err:null};
+(async()=>{try{const {GLTFLoader}=await import('three/addons/loaders/GLTFLoader.js');
+ const gltf=await new GLTFLoader().loadAsync(new URL('models/vic.glb',location.href).href);
+ vic.updateWorldMatrix(true,true);const inv=vic.matrixWorld.clone().invert(),box=new THREE.Box3();
+ vic.traverse(o=>{if(o.isMesh&&o!==flame){if(!o.geometry.boundingBox)o.geometry.computeBoundingBox();box.union(o.geometry.boundingBox.clone().applyMatrix4(inv.clone().multiply(o.matrixWorld)));}});
+ const m=gltf.scene,h=box.max.y-box.min.y,sc=h/1.72;m.scale.setScalar(sc);m.position.y=box.min.y;
+ m.traverse(o=>{if(o.isMesh){o.frustumCulled=false;o.castShadow=false;}});
+ for(const c of [...vic.children])if(c!==flame&&c!==glow)c.visible=false;vic.add(m);
+ const feet=[m.getObjectByName('foot.L'),m.getObjectByName('foot.R')];
+ boots.forEach((b,i)=>{if(!feet[i])return;b.removeFromParent();feet[i].add(b);b.position.set(0,0.04/sc,0.03/sc);b.scale.setScalar(0.85/sc);});
+ const mixer=new THREE.AnimationMixer(m);
+ for(const c of gltf.animations){c.tracks=c.tracks.filter(t=>t.name!=='root.position');const a=mixer.clipAction(c);
+  if(c.name==='jump'||c.name==='hit'){a.setLoop(THREE.LoopOnce,1);a.clampWhenFinished=true;}vicModel.acts[c.name]=a;}
+ vicModel.mixer=mixer;vicModel.model=m;vicModel.acts.idle&&vicModel.acts.idle.play();vicModel.loaded=true;
+}catch(e){vicModel.failed=true;vicModel.err=String(e);console.warn('Vic model failed, using primitive Vic:',e);}})();
+function vicAnim(dt){if(!vicModel.loaded)return;const w=st.over?'hit':!st.grounded&&st.hopT<0||st.hopArc>0?(st.thrusting?'jetpack_hover':'jump'):st.speed>0?'run':'idle';
+ if(w!==vicModel.clip&&vicModel.acts[w]){const prev=vicModel.acts[vicModel.clip],nx=vicModel.acts[w];nx.reset().play();if(prev)nx.crossFadeFrom(prev,w==='hit'?0.08:0.18,false);vicModel.clip=w;}
+ if(vicModel.acts.run)vicModel.acts.run.timeScale=Math.min(2.2,0.8+st.speed/60);vicModel.mixer.update(dt);}
+
+const clock=new THREE.Clock();let lastFrameDt=0.016;const camPos=new THREE.Vector3(0,CAM_D,R+CAM_H);const look=new THREE.Vector3();
 let simT=0;function step(dt){st.frames++;simT+=dt;
  if(!st.over){st.t+=dt;
   const L=keys.left||touchHold.left||tapPend.left,Rt=keys.right||touchHold.right||tapPend.right;tapPend.left=tapPend.right=0;
@@ -467,7 +487,7 @@ let simT=0;function step(dt){st.frames++;simT+=dt;
  vic.rotation.x=Math.PI/2;vic.rotation.y=-st.lean*0.5;vic.rotation.z=0;vic.rotateZ(-st.lean*0.25);if(IN)vic.rotateZ(Math.PI); // local +Y -> outward(+Z pivot), local +Z -> down(-Y world)
  if(camTheta0){st.camTheta=st.theta;camTheta0=false;}
  st.camTheta+=angDiff(st.theta,st.camTheta)*(1-Math.exp(-CAM_FOLLOW*dt));
- flame.visible=st.thrusting;if(st.thrusting){flame.scale.set(1,0.8+Math.random()*0.6,1);
+ vicAnim(Math.min(0.05,lastFrameDt||0.016));flame.visible=st.thrusting;if(st.thrusting){flame.scale.set(1,0.8+Math.random()*0.6,1);
   for(let n=0;n<2;n++){const p=parts[pIdx++%PN];const w=flame.getWorldPosition(new THREE.Vector3());p.m.position.copy(w);p.life=0.4;p.m.visible=true;p.m.material.color.set(0xff6fd0);
    const nrm=new THREE.Vector3(Math.sin(st.theta),0,Math.cos(st.theta)).multiplyScalar(IN?-1:1);p.v.copy(nrm).multiplyScalar(-4-Math.random()*2).add(new THREE.Vector3((Math.random()-.5)*1.5,6+Math.random()*3,(Math.random()-.5)*1.5));}}
  for(const p of parts){if(p.life>0){p.life-=dt;p.m.position.addScaledVector(p.v,dt);p.m.material.opacity=Math.max(0,p.life/0.4);p.m.scale.setScalar(1+(0.4-p.life)*4);if(p.life<=0)p.m.visible=false;}}
@@ -479,11 +499,11 @@ let simT=0;function step(dt){st.frames++;simT+=dt;
  document.getElementById('score').textContent=Math.floor(st.dist)+' m';
  document.getElementById('best').textContent='Best: '+Math.max(best(),Math.floor(st.dist))+' m';
 }
-renderer.setAnimationLoop(()=>{const dt=Math.min(clock.getDelta(),0.05);
+renderer.setAnimationLoop(()=>{const dt=Math.min(clock.getDelta(),0.05);lastFrameDt=dt;
  // substeps: never move more than ~0.8m per physics step (no tunneling at 200)
  const n=Math.min(40,Math.max(1,Math.ceil(st.speed*dt/0.8)));for(let i=0;i<n;i++)step(dt/n);
  scene.fog.far=Math.max(150,st.speed*1.8+20);scene.fog.near=scene.fog.far*0.27;renderer.render(scene,camera);});
-window.__game={get state(){return {...st,obstacles:obstacles.map(o=>({theta:o.theta,ay:o.ay,lx:o.lx,kind:o.kind})),meteors:meteors.map(m=>({kind:m.kind,theta:m.theta,ay:m.ay,t:m.t,lead:LEAD,ringVisible:m.ring.visible,rockScale:m.rock.scale.x,rockPos:m.rock.position.toArray()})),gaps:gaps.map(g=>({kind:g.kind,near:g.near,L:g.L,Lo:g.Lo,Li:g.Li,Lf:g.Lf,Le:g.Le})),portals:portals.map(p=>({zone:p.zone,ay:p.ay,theta:p.theta,exit:!!p.exit,gc:p.gc})),craters:craters.map(c=>({theta:c.theta,ay:c.ay,life:c.life})),mode,vicPos:vic.getWorldPosition(new THREE.Vector3()).toArray()}},
+window.__game={get vicModel(){return {loaded:vicModel.loaded,failed:vicModel.failed,clip:vicModel.clip,err:vicModel.err}},get state(){return {...st,obstacles:obstacles.map(o=>({theta:o.theta,ay:o.ay,lx:o.lx,kind:o.kind})),meteors:meteors.map(m=>({kind:m.kind,theta:m.theta,ay:m.ay,t:m.t,lead:LEAD,ringVisible:m.ring.visible,rockScale:m.rock.scale.x,rockPos:m.rock.position.toArray()})),gaps:gaps.map(g=>({kind:g.kind,near:g.near,L:g.L,Lo:g.Lo,Li:g.Li,Lf:g.Lf,Le:g.Le})),portals:portals.map(p=>({zone:p.zone,ay:p.ay,theta:p.theta,exit:!!p.exit,gc:p.gc})),craters:craters.map(c=>({theta:c.theta,ay:c.ay,life:c.life})),mode,vicPos:vic.getWorldPosition(new THREE.Vector3()).toArray()}},
  spawnAt(theta,ay){spawn(theta,ay);},
  get simT(){return simT},reset,jump:requestJump,spawnMeteor:(k,th,ay)=>spawnMeteor(k,th,ay),setTime:t=>{st.t=t;},consts:{R,BASE,CAP,V0,G,HOP_H,COYOTE,BUFFER,TURN_RATE,FUEL_TIME},placeholder:false,spawnGap:(n,k)=>{const g=spawnGap(n,k);return {kind:g.kind,near:g.near,L:g.L,Lo:g.Lo,Li:g.Li}},setGapIn:x=>{st.gapIn=x},setSpeedT:t=>{st.t=t},gapPhys:{AIR_MAX,HOP_AIR,GAP_AIR},clearAll(){for(const o of obstacles)scene.remove(o.mesh);obstacles.length=0;clearMeteors();st.spawnIn=99;st.meteorIn=99;st.gapIn=999;st.portalIn=999;},spawnPortal:(z,ay,th)=>{const p=spawnPortal(z,ay,th);return {zone:p.zone,ay:p.ay,theta:p.theta}},enterRealm:z=>enterRealm(z),startStrobe:()=>startStrobe(),strobeHold:v=>{st.strobeHold=v;if(v)setStrobeDark(v==='dark');},setDist:d=>{st.dist=d},setStrobeIn:x=>{st.strobeIn=x},consts2:{FLAT_X,RA,RAIL_BOOST,LANES},tubeVisible:()=>tube.visible,bg:()=>scene.background.isColor?scene.background.getHex():'tex',pickRealm:d=>{const o=st.dist;st.dist=d;const r=pickRealm();st.dist=o;return r},setPortalIn:x=>{st.portalIn=x},skipPad(){st.padDone=true;pad.visible=false;},screenX(){const v=vic.getWorldPosition(new THREE.Vector3()).project(camera);return (v.x+1)/2*innerWidth;},project(a){const v=new THREE.Vector3(...a).project(camera);return [(v.x+1)/2*innerWidth,(1-v.y)/2*innerHeight,v.z];}};
 </script></body></html>
