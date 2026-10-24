@@ -103,11 +103,11 @@ const vicPivot=new THREE.Group();vicPivot.add(vic);scene.add(vicPivot);
 const VIC_HALF=new THREE.Vector3(0.5,1.0,0.5); // half extents in local (tangent, radial, axial)
 const obsGeo=new THREE.BoxGeometry(2.2,0.9,0.6), obsMat=new THREE.MeshStandardMaterial({color:0xffc83d,emissive:0x332200});
 const OBS_HALF={t:1.1,r:0.45,a:0.3};
-const meteors=[],craters=[];let st,camTheta0=true;const obstacles=[];
+const meteors=[],craters=[];let pad=null;let st,camTheta0=true;const obstacles=[];
 const best=()=>+(localStorage.getItem('vicRouteBest')||0);
 function reset(){for(const o of obstacles)scene.remove(o.mesh);obstacles.length=0;if(typeof clearMeteors==='function')clearMeteors();
- st={theta:0,y:0,vy:0,grounded:true,lastGround:0,bufferT:-1,speed:BASE,t:0,dist:0,spawnIn:1.5,over:false,frames:0,impacts:0,meteorIn:0,killedBy:null,spawnLo:1.8,spawnHi:3.2,difficulty:0,spins:0,jumps:0,fuel:1,thrusting:false,jumpT:0,maxY:0,camTheta:0,lean:0};camTheta0=true;
- document.getElementById('over').style.display='none';}
+ st={theta:0,y:0,vy:0,grounded:true,lastGround:0,bufferT:-1,speed:BASE,t:0,dist:0,spawnIn:1.5,over:false,frames:0,impacts:0,meteorIn:0,killedBy:null,spawnLo:1.8,spawnHi:3.2,difficulty:0,boost:0,boosted:false,padAy:-50,padDone:false,te:0,spins:0,jumps:0,fuel:1,thrusting:false,jumpT:0,maxY:0,camTheta:0,lean:0};camTheta0=true;
+ document.getElementById('over').style.display='none';if(pad){pad.visible=true;placePad();}}
 reset();
 const keys={left:false,right:false,jump:false};const touchHold={left:false,right:false,jump:false};const tapPend={left:0,right:0};
 function requestJump(){if(st.over){reset();return;}st.bufferT=st.t;}
@@ -146,26 +146,46 @@ function collide(o){if(!st.grounded)return false; // spec: collision only while 
 function gameOver(by){st.over=true;st.killedBy=by||'barrier';const m=Math.floor(st.dist);if(m>best())localStorage.setItem('vicRouteBest',m);
  document.getElementById('final').textContent=`${st.killedBy==='barrier'?'':'Knocked out by a '+st.killedBy+'! '}${m} m — Best ${best()} m`;document.getElementById('over').style.display='flex';}
 
-// ---------- Meteors ----------
-const LEAD=1.2, HIT_R=2.2, HIT_H=2.0, CRATER_R=1.8, CRATER_H=2.0, CRATER_LIFE=7;
+// ---------- Boost pad ----------
+const surf=(th,h,ay,v=new THREE.Vector3())=>v.set(Math.sin(th)*(R+h),ay,Math.cos(th)*(R+h));
+const BOOST_T=30, PAD_W=3.2, PAD_L=6; // 30s = 20% of the 150s ramp
+const padTex=(()=>{const c=document.createElement('canvas');c.width=128;c.height=256;const x=c.getContext('2d');x.fillStyle='#062a33';x.fillRect(0,0,128,256);
+ x.strokeStyle='#3ff';x.lineWidth=8;x.strokeRect(4,4,120,248);x.fillStyle='#7ff';for(let i=0;i<3;i++){const y=40+i*70;x.beginPath();x.moveTo(20,y+40);x.lineTo(64,y);x.lineTo(108,y+40);x.lineTo(108,y+60);x.lineTo(64,y+20);x.lineTo(20,y+60);x.closePath();x.fill();}
+ const t=new THREE.CanvasTexture(c);return t;})();
+pad=new THREE.Mesh(new THREE.PlaneGeometry(PAD_W,PAD_L),new THREE.MeshBasicMaterial({map:padTex,transparent:true,fog:false,side:THREE.DoubleSide}));scene.add(pad);
+const padLight=new THREE.PointLight(0x33ffff,8,8);pad.add(padLight);padLight.position.set(0,0,1);
+function placePad(){surf(0,0.07,st.padAy,pad.position);pad.rotation.set(0,0,0);pad.rotation.y=0;pad.rotation.x=0;pad.rotation.order='YXZ';pad.rotation.set(0,0,Math.PI);}
+function updatePad(dt){if(st.padDone)return;st.padAy+=st.speed*dt;placePad();pad.material.opacity=0.75+0.25*Math.sin(st.t*12);
+ if(Math.abs(st.padAy)<PAD_L/2+0.3&&st.grounded&&Math.abs(angDiff(0,st.theta))*R<PAD_W/2+0.4){st.padDone=true;st.boosted=true;st.boost=BOOST_T;pad.visible=false;
+  flash();burst(surf(0,.5,0));const w=document.getElementById('warn');w.textContent='⚡ BOOST!';w.style.color='#5ff';w.style.display='block';setTimeout(()=>{w.textContent='☄ METEOR';w.style.color='#ff5040';},900);}
+ else if(st.padAy>PAD_L){st.padDone=true;pad.visible=false;}}
+placePad();
 
-const mGeo=new THREE.IcosahedronGeometry(0.9,1),mMatM=new THREE.MeshStandardMaterial({color:0x5a2a14,emissive:0xff5a10,emissiveIntensity:1.2,flatShading:true});
-const trailMat=new THREE.MeshBasicMaterial({color:0xff7a20,transparent:true,opacity:.6});
+// ---------- Meteors ----------
+const LEAD=5, RING_T=2, HIT_R=2.2, HIT_H=2.0, CRATER_R=1.8, CRATER_H=2.0, CRATER_LIFE=7;
+
+const mGeo=new THREE.IcosahedronGeometry(0.9,1),mMatM=new THREE.MeshStandardMaterial({color:0x5a2a14,emissive:0xff5a10,emissiveIntensity:1.2,flatShading:true,fog:false});
+const trailMat=new THREE.MeshBasicMaterial({color:0xff7a20,transparent:true,opacity:.6,fog:false,blending:THREE.AdditiveBlending,depthWrite:false});
+const sparkTex=(()=>{const c=document.createElement('canvas');c.width=c.height=64;const x=c.getContext('2d');const g=x.createRadialGradient(32,32,0,32,32,32);g.addColorStop(0,'#fff');g.addColorStop(.25,'#ffd28a');g.addColorStop(1,'rgba(255,120,40,0)');x.fillStyle=g;x.fillRect(0,0,64,64);
+ x.strokeStyle='rgba(255,240,200,.9)';x.lineWidth=2;x.beginPath();x.moveTo(32,0);x.lineTo(32,64);x.moveTo(0,32);x.lineTo(64,32);x.stroke();return new THREE.CanvasTexture(c);})();
 const ringMat=new THREE.MeshBasicMaterial({color:0xff2020,transparent:true,opacity:.8,side:THREE.DoubleSide});
 const craterMat=new THREE.MeshStandardMaterial({color:0x2a0a04,emissive:0xff3a00,emissiveIntensity:1.1,roughness:1});
-const surf=(th,h,ay,v=new THREE.Vector3())=>v.set(Math.sin(th)*(R+h),ay,Math.cos(th)*(R+h));
 function spawnMeteor(kind,theta,ay){
  if(theta===undefined)theta=kind==='targeted'?st.theta:st.theta+(Math.random()-.5)*0.6;
  if(ay===undefined)ay=kind==='targeted'?-st.speed*LEAD:-(st.speed*LEAD+18+Math.random()*12);
- const ring=new THREE.Mesh(new THREE.RingGeometry(HIT_R*.8,HIT_R,32),ringMat.clone());scene.add(ring);
+ const ring=new THREE.Mesh(new THREE.RingGeometry(HIT_R*.8,HIT_R,32),ringMat.clone());scene.add(ring);ring.visible=false;
  const rock=new THREE.Mesh(mGeo,mMatM);scene.add(rock);
  const trail=new THREE.Mesh(new THREE.ConeGeometry(.8,7,12,1,true),trailMat);rock.add(trail);
+ const spark=new THREE.Sprite(new THREE.SpriteMaterial({map:sparkTex,color:0xffe0b0,fog:false,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false}));rock.add(spark);
  const side=Math.random()<.5?-1:1;
- const m={kind,theta,ay,t:0,ring,rock,trail,from:{th:theta+side*0.35,h:16,dy:-30}};meteors.push(m);placeMeteor(m);return m;}
+ const m={kind,theta,ay,extra:ay+st.speed*LEAD,t:0,ring,rock,trail,spark,from:{th:theta+side*0.25,h:22,dy:-140}};meteors.push(m);placeMeteor(m);return m;}
 function placeMeteor(m){const k=Math.min(1,m.t/LEAD);
  surf(m.theta,0.06,m.ay,m.ring.position);m.ring.rotation.set(0,m.theta,0);
- m.ring.material.opacity=0.4+0.5*Math.abs(Math.sin(m.t*14));m.ring.scale.setScalar(1.4-0.4*k);
- const th=m.from.th+(m.theta-m.from.th)*k,h=m.from.h*(1-k)+0.8,y=m.ay+m.from.dy*(1-k);
+ const left=LEAD-m.t;m.ring.visible=left<=RING_T;const kr=Math.max(0,1-left/RING_T);
+ m.ring.material.opacity=0.4+0.5*Math.abs(Math.sin(m.t*14));m.ring.scale.setScalar(1.4-0.4*kr);
+ const g=0.12+0.88*k*k;m.rock.scale.setScalar(g);m.trail.scale.set(1,0.3+0.7*k,1);
+ m.spark.scale.setScalar((5+3*k)/g*(0.75+0.35*Math.sin(m.t*23)*Math.sin(m.t*7.3)));m.spark.material.opacity=1-0.5*k;
+ const th=m.from.th+(m.theta-m.from.th)*k,h=m.from.h*(1-k)*(1-k*0.3)+0.8,y=m.ay+m.from.dy*(1-k);
  const prev=m.rock.position.clone();surf(th,h,y,m.rock.position);m.rock.rotation.x+=0.2;
  const dir=m.rock.position.clone().sub(prev);if(dir.lengthSq()>1e-6){m.trail.position.set(0,0,0);
   const q=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),dir.normalize().negate());m.trail.quaternion.copy(q.premultiply(m.rock.quaternion.clone().invert()));m.trail.translateY(3.5);}}
@@ -179,22 +199,23 @@ function impact(m){scene.remove(m.ring);scene.remove(m.rock);flash();burst(surf(
   const c={theta:m.theta,ay:m.ay,life:CRATER_LIFE,mesh};craters.push(c);placeCrater(c);}}
 function placeCrater(c){surf(c.theta,0.05,c.ay,c.mesh.position);c.mesh.rotation.set(0,c.theta,0);c.mesh.material=craterMat;}
 function updateMeteors(dt,move){
- st.meteorIn-=dt;if(st.t>18&&st.meteorIn<=0){spawnMeteor(Math.random()<0.5?'targeted':'path');
+ st.meteorIn-=dt;if(st.te>18&&st.meteorIn<=0){spawnMeteor(Math.random()<0.5?'targeted':'path');
   st.meteorIn=Math.max(2.5,9-6*st.difficulty)+Math.random()*3;}
- for(let i=meteors.length-1;i>=0;i--){const m=meteors[i];m.t+=dt;m.ay+=move;placeMeteor(m);
+ for(let i=meteors.length-1;i>=0;i--){const m=meteors[i];m.t+=dt;m.ay=m.extra-st.speed*Math.max(0,LEAD-m.t);placeMeteor(m);
   if(m.t>=LEAD){meteors.splice(i,1);impact(m);if(st.over)return;}}
  craterMat.emissiveIntensity=0.8+0.4*Math.sin(st.t*10);
  for(let i=craters.length-1;i>=0;i--){const c=craters[i];c.ay+=move;c.life-=dt;placeCrater(c);
   if(c.ay>20||c.life<=0){scene.remove(c.mesh);craters.splice(i,1);continue;}
   if(tubeDist(c.theta,c.ay)<CRATER_R+0.4&&st.y<CRATER_H){gameOver('crater');return;}}
- document.getElementById('warn').style.display=meteors.length?'block':'none';}
+ document.getElementById('warn').style.display=meteors.some(m=>m.ring.visible)?'block':'none';}
 function clearMeteors(){for(const m of meteors){scene.remove(m.ring);scene.remove(m.rock);}for(const c of craters)scene.remove(c.mesh);meteors.length=0;craters.length=0;document.getElementById('warn').style.display='none';}
 const clock=new THREE.Clock();const camPos=new THREE.Vector3(0,CAM_D,R+CAM_H);const look=new THREE.Vector3();
 let simT=0;function step(dt){st.frames++;simT+=dt;
  if(!st.over){st.t+=dt;
   const L=keys.left||touchHold.left||tapPend.left,Rt=keys.right||touchHold.right||tapPend.right;tapPend.left=tapPend.right=0;
-  const dir=(Rt?1:0)-(L?1:0);if(dir){st.theta+=dir*TURN_RATE*dt;st.spins++;}st.lean+=(dir-st.lean)*(1-Math.exp(-10*dt));
-  st.speed=Math.min(CAP,BASE+0.12*st.t+0.0004*st.t*st.t);st.difficulty=Math.min(1,st.t/150);st.spawnLo=1.8-1.1*st.difficulty;st.spawnHi=3.2-2.0*st.difficulty;
+  const dir=(L?1:0)-(Rt?1:0);/* +theta = screen-left */if(dir){st.theta+=dir*TURN_RATE*dt;st.spins++;}st.lean+=(dir-st.lean)*(1-Math.exp(-10*dt));
+  updatePad(dt);const te=st.t+st.boost;st.te=te;
+  st.speed=Math.min(CAP,BASE+0.12*te+0.0004*te*te);st.difficulty=Math.min(1,te/150);st.spawnLo=1.8-1.1*st.difficulty;st.spawnHi=3.2-2.0*st.difficulty;
   const move=st.speed*dt;st.dist+=move;tex.offset.y-=move/300*30;
   if(st.grounded)st.lastGround=st.t;
   const buffered=st.bufferT>=0&&st.t-st.bufferT<=BUFFER;
@@ -229,7 +250,7 @@ let simT=0;function step(dt){st.frames++;simT+=dt;
  document.getElementById('best').textContent='Best: '+Math.max(best(),Math.floor(st.dist))+' m';
 }
 renderer.setAnimationLoop(()=>{const dt=Math.min(clock.getDelta(),0.05);step(dt);renderer.render(scene,camera);});
-window.__game={get state(){return {...st,obstacles:obstacles.map(o=>({theta:o.theta,ay:o.ay})),meteors:meteors.map(m=>({kind:m.kind,theta:m.theta,ay:m.ay,t:m.t,lead:LEAD})),craters:craters.map(c=>({theta:c.theta,ay:c.ay,life:c.life})),mode,vicPos:vic.getWorldPosition(new THREE.Vector3()).toArray()}},
+window.__game={get state(){return {...st,obstacles:obstacles.map(o=>({theta:o.theta,ay:o.ay})),meteors:meteors.map(m=>({kind:m.kind,theta:m.theta,ay:m.ay,t:m.t,lead:LEAD,ringVisible:m.ring.visible,rockScale:m.rock.scale.x,rockPos:m.rock.position.toArray()})),craters:craters.map(c=>({theta:c.theta,ay:c.ay,life:c.life})),mode,vicPos:vic.getWorldPosition(new THREE.Vector3()).toArray()}},
  spawnAt(theta,ay){const m=new THREE.Mesh(obsGeo,obsMat);const o={mesh:m,theta,ay};scene.add(m);obstacles.push(o);placeObs(o);},
- get simT(){return simT},reset,jump:requestJump,spawnMeteor:(k,th,ay)=>spawnMeteor(k,th,ay),setTime:t=>{st.t=t;},consts:{R,BASE,CAP,V0,G,HOP_H,COYOTE,BUFFER,TURN_RATE,FUEL_TIME},placeholder:false};
+ get simT(){return simT},reset,jump:requestJump,spawnMeteor:(k,th,ay)=>spawnMeteor(k,th,ay),setTime:t=>{st.t=t;},consts:{R,BASE,CAP,V0,G,HOP_H,COYOTE,BUFFER,TURN_RATE,FUEL_TIME},placeholder:false,skipPad(){st.padDone=true;pad.visible=false;},screenX(){const v=vic.getWorldPosition(new THREE.Vector3()).project(camera);return (v.x+1)/2*innerWidth;},project(a){const v=new THREE.Vector3(...a).project(camera);return [(v.x+1)/2*innerWidth,(1-v.y)/2*innerHeight,v.z];}};
 </script></body></html>
