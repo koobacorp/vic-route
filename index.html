@@ -448,7 +448,7 @@ const vicModel={loaded:false,failed:false,clip:'idle',mixer:null,acts:{},err:nul
  m.traverse(o=>{if(o.isMesh){o.frustumCulled=false;o.castShadow=false;}});
  for(const c of [...vic.children])if(c!==flame&&c!==glow)c.visible=false;vic.add(m);
  const feet=[m.getObjectByName('foot.L'),m.getObjectByName('foot.R')];
- boots.forEach((b,i)=>{if(!feet[i])return;b.removeFromParent();feet[i].add(b);b.position.set(0,0.04/sc,0.03/sc);b.scale.setScalar(0.85/sc);});
+ if(0)boots.forEach((b,i)=>{if(!feet[i])return;b.removeFromParent();feet[i].add(b);b.position.set(0,0.04/sc,0.03/sc);b.scale.setScalar(0.85/sc);});
  const mixer=new THREE.AnimationMixer(m);
  for(const c of gltf.animations){c.tracks=c.tracks.filter(t=>t.name!=='root.position');const a=mixer.clipAction(c);
   if(c.name==='jump'||c.name==='hit'){a.setLoop(THREE.LoopOnce,1);a.clampWhenFinished=true;}vicModel.acts[c.name]=a;}
