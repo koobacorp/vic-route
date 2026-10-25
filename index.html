@@ -13,8 +13,8 @@ canvas{display:block;touch-action:none}
 #over{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,.6);color:#fff;z-index:10}
 #over h1{margin:0 0 8px}#over button{font-size:22px;padding:12px 30px;border:0;border-radius:10px;background:#ff4f8b;color:#fff;margin-top:14px}
 #touch{position:fixed;inset:0;display:none;pointer-events:none;z-index:5}
-.zone{position:absolute;bottom:0;height:50%;width:35%;border:2px dashed rgba(255,255,255,.12);box-sizing:border-box;display:flex;align-items:flex-end;justify-content:center;padding-bottom:30px;color:rgba(255,255,255,.4);font-size:34px}
-#zl{left:0}#zr{right:0}.gz{top:0;bottom:auto;align-items:flex-start;padding-top:150px;color:rgba(255,80,220,.6);font-size:17px;font-weight:800;border-color:rgba(255,80,220,.25)}#zgl{left:0}#zgr{right:0}#tip{position:absolute;left:50%;top:38%;transform:translateX(-50%);color:rgba(255,255,255,.45);font:600 13px system-ui;text-align:center}
+.zone{position:absolute;bottom:0;height:22%;width:35%;border:2px dashed rgba(255,255,255,.12);box-sizing:border-box;display:flex;align-items:flex-end;justify-content:center;padding-bottom:22px;color:rgba(255,255,255,.4);font-size:34px}
+#zl{left:0}#zr{right:0}.gz{bottom:22%;height:18%;align-items:center;padding:0;color:#fff;font-size:17px;font-weight:800;border:2px solid rgba(255,80,220,.6);background:rgba(255,80,220,.18);border-radius:18px}#zgl{left:0}#zgr{right:0}#tip{position:absolute;left:50%;top:30%;transform:translateX(-50%);color:rgba(255,255,255,.45);font:600 13px system-ui;text-align:center}
 #jb{position:absolute;left:50%;bottom:40px;transform:translateX(-50%);width:90px;height:90px;border-radius:50%;background:rgba(255,79,139,.45);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700}
 </style>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
@@ -128,7 +128,7 @@ function setMode(m){if(m===mode)return;mode=m;document.getElementById('mode').te
  document.getElementById('touch').style.display=m==='touch'?'block':'none';document.getElementById('khint').style.display=m==='touch'?'none':'';}
 if(matchMedia('(pointer:coarse)').matches||'ontouchstart' in window&&navigator.maxTouchPoints>0)setMode('touch');
 const active=new Map();
-function zoneOf(x,y){const w=innerWidth;if(y<innerHeight/2){if(x<w*0.35)return 'gunL';if(x>w*0.65)return 'gunR';return 'jump';}
+function zoneOf(x,y){const w=innerWidth;const h=innerHeight;if(y<h*0.60)return 'jump';if(y<h*0.78){if(x<w*0.35)return 'gunL';if(x>w*0.65)return 'gunR';return 'jump';}
  const jb=document.getElementById('jb').getBoundingClientRect();
  if(x>=jb.left&&x<=jb.right&&y>=jb.top&&y<=jb.bottom)return 'jump';
  if(x<w*0.35)return 'left';if(x>w*0.65)return 'right';return 'jump';}
